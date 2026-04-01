@@ -1,3 +1,6 @@
+# Codex folder
+.codex
+
 # Existing local/example output
 example/
 example_small/

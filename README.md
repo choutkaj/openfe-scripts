@@ -5,6 +5,7 @@ Small helper scripts that extend the standard OpenFE CLI workflow with a few ext
 Current scripts include:
 
 - `prep_rbfe_hybridtop.py` for preparing hybrid-topology RBFE networks and writing transformation JSON files
+- `prep_rbfe_septop.py` for preparing separated-topology (SepTop) RBFE networks and writing transformation JSON files
 - `workup.py` for summarising and analysing completed OpenFE calculations
 - `plot_network.py` for plotting ligand-network summaries with RBFE results
 
@@ -105,4 +106,56 @@ To see all available options:
 
 ```bash
 python3 prep_rbfe_hybridtop.py --help
+```
+
+## `prep_rbfe_septop.py`
+
+This script prepares an RBFE separated-topology (SepTop) setup from:
+
+- a receptor PDB file
+- a ligand SDF file
+- a selected network-planning mode
+
+It writes:
+
+- `network_setup/ligand_network.png`
+- `network_setup/ligand_network.graphml`
+- `network_setup/transformations/*.json`
+- mapping PNG files into `mappings/`
+
+Unlike the hybrid-topology script, each SepTop transformation JSON represents the full RBFE cycle for one ligand pair. The solvent and complex legs are handled internally by the SepTop protocol, so the script writes one transformation per ligand-network edge with `mapping=None`.
+
+### Basic usage
+
+Minimal example using the default network-planning settings:
+
+```bash
+python3 prep_rbfe_septop.py \
+  --rec example_small/structures/5H9P_prepped.pdb \
+  --ligs example_small/structures/thiodigalactoside_thiolactose_Cfiller.sdf \
+  --mapper kartograf \
+  --scorer lomap \
+  --network minimal_redundant \
+  --protocol-repeats 1 \
+  --host-min-distance 0.5 \
+  --host-max-distance 1.5 \
+  --output-dir .
+```
+
+Useful optional arguments:
+
+- `--windows`: resize the default SepTop lambda schedules and set the replica count
+- `--windowtime`: set the production length per lambda window in nanoseconds
+- `--equilibration-time`: set the alchemical equilibration length in nanoseconds
+- `--central-ligand`: central ligand name for `--network radial`
+- `--custom-network`: YAML file with custom ligand pairs for `--network custom`
+
+### Analysis note
+
+SepTop result analysis is best kept in a separate follow-on workflow. The existing `workup.py` is built around hybrid-topology solvent/complex leg JSONs and does not yet understand SepTop result structure.
+
+For available options:
+
+```bash
+python3 prep_rbfe_septop.py --help
 ```
