@@ -11,10 +11,10 @@ A collection of helper scripts that extend the [OpenFE](https://github.com/OpenF
 
 ## Installation
 
-These scripts are designed to run within a standard OpenFE environment. No special installation is required beyond ensuring the necessary dependencies (OpenFE, RDKit, OpenFF) are available.
+These scripts should run within a standard OpenFE environment. Just activate your OpenFE environment and run the scripts. For example:
 
 ```bash
-micromamba activate openfe_env
+micromamba activate openfe
 ```
 
 ---
@@ -46,7 +46,7 @@ python3 prep_rbfe_hybridtop.py \
 
 ### Separated Topology (`prep_rbfe_septop.py`)
 
-Prepares a SepTop-based RBFE network (available since OpenFE 1.7.0). SepTop handles solvent and complex legs internally, so each transformation JSON represents a full RBFE cycle with `mapping=None`.
+Prepares a SepTop-based RBFE network. Experimental.
 
 #### Usage Example
 ```bash
@@ -80,22 +80,18 @@ python3 workup_hybridtop.py results/
 ```
 
 It writes CSV summaries to `workup/` including:
-- `summary_energies.csv`: Aggregated DDG results.
+- `summary_energies.csv`: Aggregated ΔΔG results.
 - `summary_convergence.csv`: Quality metrics (MBAR/HREX overlap, hysteresis).
 - `summary_convergence_heatmap.png`: A visual summary of simulation quality.
 
 ### `plot_network.py`
 
-Renders a publication-quality ligand network plot showing calculated ΔΔG values and color-coded edge quality metrics.
+Renders a ligand network plot showing calculated ΔΔG values and color-coded edge quality metrics. The network plotting is still a bit rough around the edges.
 
 ```bash
 python3 plot_network.py workup/ --results-dir results/
 ```
 
-- **Output**: `summary_ligand_network.png`
-- **Visualization**: Shows aligned ligand structures as nodes and DDG values with error bars on edges. Edge colors (Green/Orange/Red) reflect the worst-performing overlap metric.
-
----
 
 ## Help
 
