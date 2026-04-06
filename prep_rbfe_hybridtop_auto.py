@@ -129,7 +129,7 @@ settings_large.protocol_repeats = 1
 
 # Defining solvent and protein components
 solvent = openfe.SolventComponent()
-protein = openfe.ProteinComponent.from_pdb_file(receptor_path)
+protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
 
 
 # Creating the alchemical network

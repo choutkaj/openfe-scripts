@@ -1415,7 +1415,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "results_dir",
         nargs="?",
-        default="example/results",
+        default="results",
         help="Directory containing repeat subdirectories with openFE result JSON files.",
     )
     parser.add_argument(

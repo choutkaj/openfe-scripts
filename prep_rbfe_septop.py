@@ -125,7 +125,7 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
     parser.add_argument(
         "--network",
         choices=("minimal_spanning", "minimal_redundant", "radial", "maximal", "custom"),
-        default="minimal_redundant",
+        default="minimal_spanning",
         help="Ligand network planner to use.",
     )
     parser.add_argument(
@@ -646,25 +646,36 @@ def build_protocol(
         settings.complex_lambda_settings,
         "complex",
     )
-    if solvent_default_windows != complex_default_windows:
-        raise ValueError(
-            "SepTop default lambda schedules use different window counts for solvent "
-            f"({solvent_default_windows}) and complex ({complex_default_windows}), "
-            "which this script does not support."
+    solvent_active_windows = solvent_default_windows
+    complex_active_windows = complex_default_windows
+    if n_windows is None:
+        LOGGER.info(
+            "Using SepTop default lambda schedules: solvent=%d windows, complex=%d windows",
+            solvent_active_windows,
+            complex_active_windows,
         )
+    else:
+        resize_lambda_settings(settings.solvent_lambda_settings, "solvent", n_windows)
+        resize_lambda_settings(settings.complex_lambda_settings, "complex", n_windows)
+        solvent_active_windows = n_windows
+        complex_active_windows = n_windows
 
-    active_windows = n_windows if n_windows is not None else solvent_default_windows
-    resize_lambda_settings(settings.solvent_lambda_settings, "solvent", active_windows)
-    resize_lambda_settings(settings.complex_lambda_settings, "complex", active_windows)
+    settings.solvent_simulation_settings.n_replicas = solvent_active_windows
+    settings.complex_simulation_settings.n_replicas = complex_active_windows
 
-    settings.solvent_simulation_settings.n_replicas = active_windows
-    settings.complex_simulation_settings.n_replicas = active_windows
-
-    LOGGER.info(
-        "Configured SepTop protocol with repeats=%d and %d lambda windows",
-        protocol_repeats,
-        active_windows,
-    )
+    if solvent_active_windows == complex_active_windows:
+        LOGGER.info(
+            "Configured SepTop protocol with repeats=%d and %d lambda windows per leg",
+            protocol_repeats,
+            solvent_active_windows,
+        )
+    else:
+        LOGGER.info(
+            "Configured SepTop protocol with repeats=%d, solvent windows=%d, and complex windows=%d",
+            protocol_repeats,
+            solvent_active_windows,
+            complex_active_windows,
+        )
     return SepTopProtocol(settings)
 
 
@@ -678,7 +689,7 @@ def create_alchemical_network(
 
     LOGGER.info("Loading receptor from %s", receptor_path)
     solvent = openfe.SolventComponent()
-    protein = openfe.ProteinComponent.from_pdb_file(receptor_path)
+    protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
 
     LOGGER.info("Creating SepTop alchemical network")
     transformations: list[Any] = []
@@ -715,6 +726,13 @@ def create_alchemical_network(
             )
         )
 
+    if not transformations:
+        raise ValueError(
+            "The ligand network did not contain any edges, so no SepTop transformations "
+            "could be created."
+        )
+
+    LOGGER.info("Created %d SepTop transformations", len(transformations))
     return openfe.AlchemicalNetwork(transformations)
 
 
@@ -743,10 +761,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             custom_network_path=config.custom_network_path,
             central_ligand_name=config.central_ligand,
         )
-        mappings_dir, transformation_dir = write_ligand_network_artifacts(
-            ligand_network,
-            config.output_dir,
-        )
         protocol = build_protocol(
             n_windows=config.n_windows,
             window_length_ns=config.window_length_ns,
@@ -754,6 +768,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             protocol_repeats=config.protocol_repeats,
             host_min_distance_nm=config.host_min_distance_nm,
             host_max_distance_nm=config.host_max_distance_nm,
+        )
+        mappings_dir, transformation_dir = write_ligand_network_artifacts(
+            ligand_network,
+            config.output_dir,
         )
         alchemical_network = create_alchemical_network(
             ligand_network,
@@ -768,7 +786,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ImportError as exc:
         LOGGER.error(
             "Missing dependency: %s. Activate the micromamba environment that contains "
-            "OpenFE, RDKit, OpenFF, and Kartograf before running this script.",
+            "OpenFE 1.7.0 or newer with SepTop support, RDKit, OpenFF, and Kartograf "
+            "before running this script.",
             exc,
         )
         return 1

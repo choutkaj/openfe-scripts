@@ -35,3 +35,5 @@ results/
 *.bz2
 
 
+# Not production-ready
+prep_rbfe_hybridtop_auto.py

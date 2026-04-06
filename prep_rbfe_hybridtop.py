@@ -110,7 +110,7 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
     parser.add_argument(
         "--network",
         choices=("minimal_spanning", "minimal_redundant", "radial", "maximal", "custom"),
-        default="minimal_redundant",
+        default="minimal_spanning",
         help="Ligand network planner to use.",
     )
     parser.add_argument(
@@ -468,7 +468,7 @@ def create_alchemical_network(
 
     LOGGER.info("Loading receptor from %s", receptor_path)
     solvent = openfe.SolventComponent()
-    protein = openfe.ProteinComponent.from_pdb_file(receptor_path)
+    protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
 
     solvent_protocol = build_protocol(
         window_length_ns=window_length_ns,
