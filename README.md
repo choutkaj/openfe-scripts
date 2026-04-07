@@ -84,7 +84,7 @@ It writes CSV summaries to `workup/` including:
 - `summary_convergence.csv`: Quality metrics (MBAR/HREX overlap, hysteresis).
 - `summary_convergence_heatmap.png`: A visual summary of simulation quality.
 
-Here is an example of the output heatmap with quality and convergence metrics. Lots of red, yayks!
+Here is an example of the output heatmap with quality and convergence metrics. Still a lot of red, yayks! Gotta sample more.
 
 ![Heatmap with metrics](https://github.com/choutkaj/openfe-scripts/blob/main/summary_convergence_heatmap.png)
 
