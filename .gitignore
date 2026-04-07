@@ -27,7 +27,6 @@ workup/
 # Common run outputs if they appear outside ignored example dirs
 results/
 *.log
-*.png
 *.graphml
 *.json
 *.npz
