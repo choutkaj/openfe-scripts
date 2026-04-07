@@ -84,6 +84,11 @@ It writes CSV summaries to `workup/` including:
 - `summary_convergence.csv`: Quality metrics (MBAR/HREX overlap, hysteresis).
 - `summary_convergence_heatmap.png`: A visual summary of simulation quality.
 
+Here is an example of the output heatmap with quality and convergence metrics. Lots of red, yayks!
+
+![Heatmap with metrics](https://github.com/choutkaj/openfe-scripts/blob/main/summary_convergence_heatmap.png)
+
+
 ### `plot_network.py`
 
 Renders a ligand network plot showing calculated ΔΔG values and color-coded edge quality metrics. The network plotting is still a bit rough around the edges.
