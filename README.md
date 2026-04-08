@@ -7,6 +7,7 @@ A collection of helper scripts that extend the [OpenFE](https://github.com/OpenF
 - **`prep_rbfe_hybridtop.py`**: Prepare hybrid-topology RBFE networks and write transformation JSON files.
 - **`prep_rbfe_septop.py`**: Prepare separated-topology (SepTop) RBFE networks and write transformation JSON files.
 - **`workup_hybridtop.py`**: Summarize and analyze completed OpenFE calculations, generating CSV reports and convergence plots.
+- **`workup_septop.py`**: Analyze SepTop result directories following the official OpenFE SepTop analysis tutorial and write TSV summaries.
 - **`plot_network.py`**: Render ligand-network summaries with ΔΔG results and quality metrics.
 
 ## Installation
@@ -88,6 +89,22 @@ Here is an example of the output heatmap with quality and convergence metrics. S
 
 ![Heatmap with metrics](https://github.com/choutkaj/openfe-scripts/blob/main/summary_convergence_heatmap.png)
 
+
+### `workup_septop.py`
+
+Processes one or more SepTop result directories exactly along the lines of the
+official OpenFE SepTop analysis tutorial and writes:
+- `ddg.tsv`: Edgewise relative binding free energies.
+- `dg.tsv`: MLE-derived absolute binding free energies.
+- `ddg_raw.tsv`: Per-leg raw SepTop free energies.
+
+If your OpenFE outputs are organized as `results/repeat1`, `results/repeat2`, ...
+you can point the script at the parent `results/` directory and it will analyze
+all repeat subfolders automatically.
+
+```bash
+python3 workup_septop.py results/ --output-dir workup_septop/
+```
 
 ### `plot_network.py`
 
