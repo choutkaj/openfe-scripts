@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import openfe
 import pathlib
 from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
