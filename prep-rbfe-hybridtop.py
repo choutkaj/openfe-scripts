@@ -16,11 +16,13 @@ LOGGER = logging.getLogger("prep_rbfe_hybridtop")
 class CliConfig:
     receptor_path: Path
     ligands_path: Path
+    partial_charge_method: str
     mapper: str
     scorer: str
     network: str
     custom_network_path: Path | None
     central_ligand: str | None
+    small_molecule_forcefield: str
     n_windows: int
     window_length_ns: float
     output_dir: Path
@@ -97,6 +99,15 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
         help="Path to the ligand SDF file.",
     )
     parser.add_argument(
+        "--partial-charge-method",
+        choices=("am1bcc", "nagl"),
+        default="am1bcc",
+        help=(
+            "Partial charge method for ligand charging. If 'nagl' is selected, "
+            "the OpenFE/OpenFF default NAGL model is used."
+        ),
+    )
+    parser.add_argument(
         "--mapper",
         choices=("lomap", "kartograf"),
         default="kartograf",
@@ -132,6 +143,15 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
         ),
     )
     parser.add_argument(
+        "--small-molecule-forcefield",
+        default="openff-2.2.1",
+        help=(
+            "Small-molecule force field passed to "
+            "RelativeHybridTopologyProtocol.default_settings(). "
+            "Default: %(default)s."
+        ),
+    )
+    parser.add_argument(
         "--windows",
         type=positive_int,
         default=11,
@@ -157,11 +177,13 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
     return CliConfig(
         receptor_path=args.rec,
         ligands_path=args.ligs,
+        partial_charge_method=args.partial_charge_method,
         mapper=args.mapper,
         scorer=args.scorer,
         network=args.network,
         custom_network_path=args.custom_network,
         central_ligand=args.central_ligand,
+        small_molecule_forcefield=args.small_molecule_forcefield,
         n_windows=args.windows,
         window_length_ns=args.windowtime,
         output_dir=args.output_dir,
@@ -196,7 +218,10 @@ def load_ligands(ligands_path: Path) -> list[Any]:
     return ligands
 
 
-def assign_partial_charges(ligands: Sequence[Any]) -> list[Any]:
+def assign_partial_charges(
+    ligands: Sequence[Any],
+    partial_charge_method: str,
+) -> list[Any]:
     from openfe.protocols.openmm_utils.charge_generation import (
         bulk_assign_partial_charges,
     )
@@ -204,9 +229,9 @@ def assign_partial_charges(ligands: Sequence[Any]) -> list[Any]:
         OpenFFPartialChargeSettings,
     )
 
-    LOGGER.info("Assigning partial charges to ligands")
+    LOGGER.info("Assigning partial charges to ligands with method=%s", partial_charge_method)
     charge_settings = OpenFFPartialChargeSettings(
-        partial_charge_method="am1bcc",
+        partial_charge_method=partial_charge_method,
         off_toolkit_backend="ambertools",
     )
     return bulk_assign_partial_charges(
@@ -441,14 +466,18 @@ def write_ligand_network_artifacts(ligand_network: Any, output_dir: Path) -> tup
 
 def build_protocol(
     *,
+    partial_charge_method: str,
     window_length_ns: float,
     n_windows: int,
     solvent_padding_nm: float,
+    small_molecule_forcefield: str,
 ) -> Any:
     from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
     from openff.units import unit
 
     settings: Any = RelativeHybridTopologyProtocol.default_settings()
+    settings.partial_charge_settings.partial_charge_method = partial_charge_method
+    settings.forcefield_settings.small_molecule_forcefield = small_molecule_forcefield
     settings.solvation_settings.solvent_padding = solvent_padding_nm * unit.nanometer
     settings.simulation_settings.production_length = window_length_ns * unit.nanosecond
     settings.simulation_settings.n_replicas = n_windows
@@ -462,8 +491,10 @@ def create_alchemical_network(
     receptor_path: Path,
     mappings_dir: Path,
     *,
+    partial_charge_method: str,
     window_length_ns: float,
     n_windows: int,
+    small_molecule_forcefield: str,
 ) -> Any:
     import openfe
 
@@ -472,14 +503,18 @@ def create_alchemical_network(
     protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
 
     solvent_protocol = build_protocol(
+        partial_charge_method=partial_charge_method,
         window_length_ns=window_length_ns,
         n_windows=n_windows,
         solvent_padding_nm=2.0,
+        small_molecule_forcefield=small_molecule_forcefield,
     )
     complex_protocol = build_protocol(
+        partial_charge_method=partial_charge_method,
         window_length_ns=window_length_ns,
         n_windows=n_windows,
         solvent_padding_nm=1.0,
+        small_molecule_forcefield=small_molecule_forcefield,
     )
 
     LOGGER.info("Creating alchemical network")
@@ -544,7 +579,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         ligands = load_ligands(config.ligands_path)
-        charged_ligands = assign_partial_charges(ligands)
+        charged_ligands = assign_partial_charges(
+            ligands,
+            partial_charge_method=config.partial_charge_method,
+        )
         ligand_network = create_ligand_network(
             charged_ligands,
             mapper_name=config.mapper,
@@ -561,8 +599,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ligand_network,
             config.receptor_path,
             mappings_dir,
+            partial_charge_method=config.partial_charge_method,
             window_length_ns=config.window_length_ns,
             n_windows=config.n_windows,
+            small_molecule_forcefield=config.small_molecule_forcefield,
         )
         written_transformations = write_transformations(
             alchemical_network,

@@ -31,8 +31,10 @@ Prepares a standard RBFE hybrid-topology setup from a receptor PDB and ligand SD
 python3 prep-rbfe-hybridtop.py \
   --rec protein.pdb \
   --ligs ligands.sdf \
+  --partial-charge-method am1bcc \
   --mapper kartograf \
   --network minimal_spanning \
+  --small-molecule-forcefield openff-2.2.1 \
   --windows 11 \
   --windowtime 5.0
 ```
@@ -46,6 +48,8 @@ python3 prep-rbfe-hybridtop.py \
 - `--central-ligand`: no default; if omitted for `radial`, the first ligand in the SDF is used.
 - `--windows`: `11` by default.
 - `--windowtime`: `5.0` ns by default.
+- `--small-molecule-forcefield`: `openff-2.2.1` by default. Confirmed working values: `openff-2.2.1`, `gaff-2.2.20`.
+- `--partial-charge-method`: `am1bcc` by default. Choices: `am1bcc`, `nagl`. If `nagl` is selected, the OpenFE/OpenFF default NAGL model is used.
 - `--output-dir`: current directory (`.`) by default.
 
 ### Separated Topology (`prep-rbfe-septop.py`)
@@ -57,7 +61,9 @@ Prepares a SepTop-based RBFE network. Experimental.
 python3 prep-rbfe-septop.py \
   --rec protein.pdb \
   --ligs ligands.sdf \
+  --partial-charge-method am1bcc \
   --network minimal_spanning \
+  --small-molecule-forcefield openff-2.2.1 \
   --protocol-repeats 1 \
   --host-min-distance 0.5 \
   --host-max-distance 1.5
@@ -72,6 +78,8 @@ python3 prep-rbfe-septop.py \
 - `--central-ligand`: no default; if omitted for `radial`, the first ligand in the SDF is used.
 - `--windows`: no default; if omitted, the SepTop protocol default lambda schedule is used.
 - `--windowtime`: no default; if omitted, the SepTop protocol default production length is used.
+- `--small-molecule-forcefield`: `openff-2.2.1` by default. Confirmed working values so far: `openff-2.2.1`, `gaff-2.2.20`.
+- `--partial-charge-method`: `am1bcc` by default. Choices: `am1bcc`, `nagl`. If `nagl` is selected, the OpenFE/OpenFF default NAGL model is used.
 - `--equilibration-time`: `2.0` ns by default.
 - `--protocol-repeats`: `1` by default.
 - `--host-min-distance`: `0.5` nm by default.
