@@ -7,16 +7,17 @@ from collections import Counter
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 LOGGER = logging.getLogger("prep_rbfe_hybridtop")
+PartialChargeMethod = Literal["am1bcc", "nagl"]
 
 
 @dataclass(frozen=True)
 class CliConfig:
     receptor_path: Path
     ligands_path: Path
-    partial_charge_method: str
+    partial_charge_method: PartialChargeMethod
     mapper: str
     scorer: str
     network: str
@@ -220,7 +221,7 @@ def load_ligands(ligands_path: Path) -> list[Any]:
 
 def assign_partial_charges(
     ligands: Sequence[Any],
-    partial_charge_method: str,
+    partial_charge_method: PartialChargeMethod,
 ) -> list[Any]:
     from openfe.protocols.openmm_utils.charge_generation import (
         bulk_assign_partial_charges,
@@ -466,7 +467,7 @@ def write_ligand_network_artifacts(ligand_network: Any, output_dir: Path) -> tup
 
 def build_protocol(
     *,
-    partial_charge_method: str,
+    partial_charge_method: PartialChargeMethod,
     window_length_ns: float,
     n_windows: int,
     solvent_padding_nm: float,
@@ -491,7 +492,7 @@ def create_alchemical_network(
     receptor_path: Path,
     mappings_dir: Path,
     *,
-    partial_charge_method: str,
+    partial_charge_method: PartialChargeMethod,
     window_length_ns: float,
     n_windows: int,
     small_molecule_forcefield: str,
@@ -500,7 +501,7 @@ def create_alchemical_network(
 
     LOGGER.info("Loading receptor from %s", receptor_path)
     solvent = openfe.SolventComponent()
-    protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
+    protein = openfe.ProteinComponent.from_pdb_file(receptor_path)
 
     solvent_protocol = build_protocol(
         partial_charge_method=partial_charge_method,

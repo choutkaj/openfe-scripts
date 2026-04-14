@@ -1,6 +1,6 @@
 # openfe-scripts
 
-A collection of helper scripts that extend the [OpenFE](https://github.com/OpenFreeEnergy/openfe) CLI workflow with extra utilities for setting up, running, and analyzing Relative Free Energy (RFE) calculations.
+A collection of helper scripts that extend the [OpenFE](https://github.com/OpenFreeEnergy/openfe) CLI workflow with extra utilities for setting up, running, and analyzing OpenFE calculations.
 
 ## Current Scripts
 
@@ -12,11 +12,38 @@ A collection of helper scripts that extend the [OpenFE](https://github.com/OpenF
 
 ## Installation
 
-These scripts should run within a standard OpenFE environment. Just activate your OpenFE environment and run the scripts. For example:
+These scripts are meant to be used from within a standard OpenFE environment.
+The recommended setup is to clone this repository and install it in
+editable mode inside your OpenFE environment. 
 
 ```bash
-micromamba activate openfe
+micromamba activate openfe    # modify if you use something else than micromamba
+git clone https://github.com/choutkaj/openfe-scripts.git
+cd openfe-scripts
+python -m pip install --no-build-isolation -e .
 ```
+
+The `--no-build-isolation` flag helps in a vanilla OpenFE environment by
+preventing `pip` from trying to download build-time packaging tools.
+
+After installation, the commands can be run directly:
+
+```bash
+prep-rbfe-septop.py --help
+prep-rbfe-hybridtop.py --help
+workup-septop.py --help
+workup-hybridtop.py --help
+plot-network.py --help
+```
+
+When you update the repository later with `git pull`, the installed commands
+will automatically use the updated code because the install is editable.
+
+If you prefer not to install the repository, you can still run the files
+directly from the checkout with `python3 /path/to/openfe-scripts/<script>.py`.
+
+The examples below assume the editable install, so the commands are shown
+without `python3`.
 
 ---
 
@@ -24,11 +51,11 @@ micromamba activate openfe
 
 ### Hybrid Topology (`prep-rbfe-hybridtop.py`)
 
-Prepares a standard RBFE hybrid-topology setup from a receptor PDB and ligand SDF.
+Prepares a standard RBFE hybrid-topology setup from a receptor PDB and SDF with ligands.
 
 #### Usage Example
 ```bash
-python3 prep-rbfe-hybridtop.py \
+prep-rbfe-hybridtop.py \
   --rec protein.pdb \
   --ligs ligands.sdf \
   --partial-charge-method am1bcc \
@@ -54,19 +81,15 @@ python3 prep-rbfe-hybridtop.py \
 
 ### Separated Topology (`prep-rbfe-septop.py`)
 
-Prepares a SepTop-based RBFE network. Experimental.
+Prepares a SepTop RBFE network.
 
 #### Usage Example
 ```bash
-python3 prep-rbfe-septop.py \
+prep-rbfe-septop.py \
   --rec protein.pdb \
   --ligs ligands.sdf \
   --partial-charge-method am1bcc \
-  --network minimal_spanning \
-  --small-molecule-forcefield openff-2.2.1 \
-  --protocol-repeats 1 \
-  --host-min-distance 0.5 \
-  --host-max-distance 1.5
+  --network minimal_spanning
 ```
 
 #### Arguments and Defaults
@@ -76,14 +99,18 @@ python3 prep-rbfe-septop.py \
 - `--network`: `minimal_spanning` by default. Choices: `minimal_spanning`, `minimal_redundant`, `radial`, `maximal`, `custom`.
 - `--custom-network`: no default; only valid and required when `--network custom` is selected.
 - `--central-ligand`: no default; if omitted for `radial`, the first ligand in the SDF is used.
-- `--windows`: no default; if omitted, the SepTop protocol default lambda schedule is used.
-- `--windowtime`: no default; if omitted, the SepTop protocol default production length is used.
-- `--small-molecule-forcefield`: `openff-2.2.1` by default. Confirmed working values so far: `openff-2.2.1`, `gaff-2.2.20`.
+- `--solvent-windows`: no explicit script default; if omitted, the solvent leg keeps the current OpenFE SepTop default lambda schedule with `27` windows.
+- `--complex-windows`: no explicit script default; if omitted, the complex leg keeps the current OpenFE SepTop default lambda schedule with `19` windows.
+- `--smart-lambda`: off by default; when used together with `--solvent-windows` and/or `--complex-windows`, extra windows are concentrated in regions where the combined lambda schedule changes most instead of stretching the defaults by window index.
+- `--solvent-windowtime`: no explicit script default; if omitted, the solvent leg keeps the OpenFE SepTop default multistate production length of `10.0` ns.
+- `--complex-windowtime`: no explicit script default; if omitted, the complex leg keeps the OpenFE SepTop default multistate production length of `10.0` ns.
+- Note: the separate OpenFE endstate-equilibration settings are currently `equilibration_length_nvt = 0.1` ns, `equilibration_length = 0.1` ns, and `production_length = 2.0` ns for both solvent and complex. These are different settings from `--solvent-windowtime` / `--complex-windowtime`.
+- `--small-molecule-forcefield`: no explicit script default; if omitted, the current OpenFE default is `openff-2.2.1`. Confirmed working values so far: `openff-2.2.1`, `gaff-2.2.20`.
 - `--partial-charge-method`: `am1bcc` by default. Choices: `am1bcc`, `nagl`. If `nagl` is selected, the OpenFE/OpenFF default NAGL model is used.
-- `--equilibration-time`: `2.0` ns by default.
-- `--protocol-repeats`: `1` by default.
-- `--host-min-distance`: `0.5` nm by default.
-- `--host-max-distance`: `1.5` nm by default.
+- `--equilibration-time`: no explicit script default; if omitted, the current OpenFE multistate equilibration length is `1.0` ns for both solvent and complex.
+- `--protocol-repeats`: `1` by default in this script. OpenFE SepTop itself currently defaults to `3`, but the wrapper intentionally overrides that to `1`.
+- `--host-min-distance`: no explicit script default; if omitted, the current OpenFE SepTop default is `0.5` nm.
+- `--host-max-distance`: no explicit script default; if omitted, the current OpenFE SepTop default is `1.5` nm.
 - `--output-dir`: current directory (`.`) by default.
 
 ---
@@ -95,7 +122,7 @@ python3 prep-rbfe-septop.py \
 Processes results from the `results/` directory (organized in `repeatN` subfolders) and generates a comprehensive analysis.
 
 ```bash
-python3 workup-hybridtop.py results/
+workup-hybridtop.py results/
 ```
 
 It writes CSV summaries to `workup/` including:
@@ -127,7 +154,7 @@ you can point the script at the parent `results/` directory and it will analyze
 all repeat subfolders automatically.
 
 ```bash
-python3 workup-septop.py results/ --output-dir workup_septop/
+workup-septop.py results/ --output-dir workup_septop/
 ```
 
 #### Arguments and Defaults
@@ -139,7 +166,7 @@ python3 workup-septop.py results/ --output-dir workup_septop/
 Renders a ligand network plot showing calculated ΔΔG values and color-coded edge quality metrics. The network plotting is still a bit rough around the edges.
 
 ```bash
-python3 plot-network.py workup/ --results-dir results/
+plot-network.py workup/ --results-dir results/
 ```
 
 #### Arguments and Defaults
@@ -152,5 +179,5 @@ python3 plot-network.py workup/ --results-dir results/
 
 For a full list of options for any script:
 ```bash
-python3 <script_name>.py --help
+<script_name>.py --help
 ```

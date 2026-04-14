@@ -8,9 +8,10 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 LOGGER = logging.getLogger("prep_rbfe_septop")
+PartialChargeMethod = Literal["am1bcc", "nagl"]
 LAMBDA_SETTING_FIELDS = (
     "lambda_elec_A",
     "lambda_elec_B",
@@ -25,19 +26,22 @@ LAMBDA_SETTING_FIELDS = (
 class CliConfig:
     receptor_path: Path
     ligands_path: Path
-    partial_charge_method: str
+    partial_charge_method: PartialChargeMethod
     mapper: str
     scorer: str
     network: str
     custom_network_path: Path | None
     central_ligand: str | None
-    small_molecule_forcefield: str
-    n_windows: int | None
-    window_length_ns: float | None
+    small_molecule_forcefield: str | None
+    solvent_n_windows: int | None
+    complex_n_windows: int | None
+    solvent_window_length_ns: float | None
+    complex_window_length_ns: float | None
+    smart_lambda: bool
     equilibration_length_ns: float | None
     protocol_repeats: int
-    host_min_distance_nm: float
-    host_max_distance_nm: float
+    host_min_distance_nm: float | None
+    host_max_distance_nm: float | None
     output_dir: Path
 
 
@@ -159,37 +163,67 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
     )
     parser.add_argument(
         "--small-molecule-forcefield",
-        default="openff-2.2.1",
+        default=None,
         help=(
             "Small-molecule force field passed to SepTopProtocol.default_settings(). "
-            "Default: %(default)s."
+            "If omitted, the OpenFE SepTop default is used."
         ),
     )
     parser.add_argument(
-        "--windows",
+        "--solvent-windows",
         type=positive_int,
         default=None,
         help=(
-            "Number of lambda windows and OpenMM replicas to use for both solvent "
-            "and complex SepTop legs. If omitted, the protocol default schedule is used."
+            "Number of lambda windows and OpenMM replicas to use for the solvent "
+            "SepTop leg. If omitted, the solvent protocol default schedule is used."
         ),
     )
     parser.add_argument(
-        "--windowtime",
+        "--complex-windows",
+        type=positive_int,
+        default=None,
+        help=(
+            "Number of lambda windows and OpenMM replicas to use for the complex "
+            "SepTop leg. If omitted, the complex protocol default schedule is used."
+        ),
+    )
+    parser.add_argument(
+        "--solvent-windowtime",
         type=positive_float,
         default=None,
         help=(
-            "Production length per lambda window in nanoseconds for both solvent "
-            "and complex SepTop legs. If omitted, the protocol default is used."
+            "Multistate production length per lambda window in nanoseconds for the "
+            "solvent SepTop leg. If omitted, the OpenFE SepTop default is used "
+            "(currently 10.0 ns)."
+        ),
+    )
+    parser.add_argument(
+        "--complex-windowtime",
+        type=positive_float,
+        default=None,
+        help=(
+            "Multistate production length per lambda window in nanoseconds for the "
+            "complex SepTop leg. If omitted, the OpenFE SepTop default is used "
+            "(currently 10.0 ns)."
+        ),
+    )
+    parser.add_argument(
+        "--smart-lambda",
+        action="store_true",
+        help=(
+            "When resizing lambda schedules, redistribute windows along the combined "
+            "lambda path so extra windows are concentrated in regions where the "
+            "protocol changes most. Without this flag, schedules are stretched by "
+            "window index."
         ),
     )
     parser.add_argument(
         "--equilibration-time",
         type=positive_float,
-        default=2.0,
+        default=None,
         help=(
             "Equilibration length in nanoseconds for both solvent and complex "
-            "alchemical simulations. Default: 2.0 ns."
+            "alchemical simulations. If omitted, the OpenFE SepTop defaults are used."
         ),
     )
     parser.add_argument(
@@ -204,19 +238,19 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
     parser.add_argument(
         "--host-min-distance",
         type=positive_float,
-        default=0.5,
+        default=None,
         help=(
             "Minimum distance in nanometers between protein and ligand atoms when "
-            "building complex restraints. Default: 0.5 nm."
+            "building complex restraints. If omitted, the OpenFE SepTop default is used."
         ),
     )
     parser.add_argument(
         "--host-max-distance",
         type=positive_float,
-        default=1.5,
+        default=None,
         help=(
             "Maximum distance in nanometers between protein and ligand atoms when "
-            "building complex restraints. Default: 1.5 nm."
+            "building complex restraints. If omitted, the OpenFE SepTop default is used."
         ),
     )
     parser.add_argument(
@@ -231,9 +265,17 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
         parser.error("--custom-network is required when --network custom is selected.")
     if args.network != "custom" and args.custom_network is not None:
         parser.error("--custom-network can only be used with --network custom.")
-    if args.windows is not None and args.windows < 2:
-        parser.error("--windows must be at least 2 for a valid lambda schedule.")
-    if args.host_min_distance >= args.host_max_distance:
+    for option_name, value in (
+        ("--solvent-windows", args.solvent_windows),
+        ("--complex-windows", args.complex_windows),
+    ):
+        if value is not None and value < 2:
+            parser.error(f"{option_name} must be at least 2 for a valid lambda schedule.")
+    if (
+        args.host_min_distance is not None
+        and args.host_max_distance is not None
+        and args.host_min_distance >= args.host_max_distance
+    ):
         parser.error("--host-min-distance must be smaller than --host-max-distance.")
 
     return CliConfig(
@@ -246,8 +288,11 @@ def parse_args(argv: Sequence[str] | None = None) -> CliConfig:
         custom_network_path=args.custom_network,
         central_ligand=args.central_ligand,
         small_molecule_forcefield=args.small_molecule_forcefield,
-        n_windows=args.windows,
-        window_length_ns=args.windowtime,
+        solvent_n_windows=args.solvent_windows,
+        complex_n_windows=args.complex_windows,
+        solvent_window_length_ns=args.solvent_windowtime,
+        complex_window_length_ns=args.complex_windowtime,
+        smart_lambda=args.smart_lambda,
         equilibration_length_ns=args.equilibration_time,
         protocol_repeats=args.protocol_repeats,
         host_min_distance_nm=args.host_min_distance,
@@ -313,7 +358,7 @@ def validate_ligand_names(ligands: Sequence[Any]) -> None:
 
 def assign_partial_charges(
     ligands: Sequence[Any],
-    partial_charge_method: str,
+    partial_charge_method: PartialChargeMethod,
 ) -> list[Any]:
     from openfe.protocols.openmm_utils.charge_generation import (
         bulk_assign_partial_charges,
@@ -566,6 +611,44 @@ def get_lambda_schedule_length(lambda_settings: Any, settings_name: str) -> int:
     return next(iter(unique_lengths))
 
 
+def get_lambda_schedule_points(lambda_settings: Any) -> list[tuple[float, ...]]:
+    n_windows = get_lambda_schedule_length(lambda_settings, "lambda")
+    return [
+        tuple(float(getattr(lambda_settings, field_name)[index]) for field_name in LAMBDA_SETTING_FIELDS)
+        for index in range(n_windows)
+    ]
+
+
+def set_lambda_schedule_points(
+    lambda_settings: Any,
+    schedule_points: Sequence[Sequence[float]],
+) -> None:
+    for field_index, field_name in enumerate(LAMBDA_SETTING_FIELDS):
+        setattr(
+            lambda_settings,
+            field_name,
+            [float(point[field_index]) for point in schedule_points],
+        )
+
+
+def interpolate_lambda_schedule_point(
+    start_point: Sequence[float],
+    end_point: Sequence[float],
+    fraction: float,
+) -> tuple[float, ...]:
+    return tuple(
+        ((1.0 - fraction) * start_value) + (fraction * end_value)
+        for start_value, end_value in zip(start_point, end_point)
+    )
+
+
+def lambda_schedule_segment_length(
+    start_point: Sequence[float],
+    end_point: Sequence[float],
+) -> float:
+    return sum(abs(end_value - start_value) for start_value, end_value in zip(start_point, end_point))
+
+
 def resample_lambda_schedule(values: Sequence[float], n_windows: int) -> list[float]:
     if n_windows < 2:
         raise ValueError("SepTop lambda schedules require at least two windows.")
@@ -600,7 +683,144 @@ def resample_lambda_schedule(values: Sequence[float], n_windows: int) -> list[fl
     return resampled
 
 
-def resize_lambda_settings(lambda_settings: Any, settings_name: str, n_windows: int) -> None:
+def allocate_extra_windows(
+    segment_lengths: Sequence[float],
+    extra_windows: int,
+) -> list[int]:
+    if extra_windows < 0:
+        raise ValueError("Cannot allocate a negative number of extra lambda windows.")
+    if not segment_lengths:
+        return []
+
+    total_length = sum(segment_lengths)
+    if total_length == 0.0:
+        raw_allocations = [extra_windows / len(segment_lengths)] * len(segment_lengths)
+    else:
+        raw_allocations = [
+            (extra_windows * segment_length) / total_length
+            for segment_length in segment_lengths
+        ]
+
+    base_allocations = [int(math.floor(allocation)) for allocation in raw_allocations]
+    remaining = extra_windows - sum(base_allocations)
+    if remaining > 0:
+        ranked_indices = sorted(
+            range(len(segment_lengths)),
+            key=lambda index: (
+                raw_allocations[index] - base_allocations[index],
+                segment_lengths[index],
+            ),
+            reverse=True,
+        )
+        for index in ranked_indices[:remaining]:
+            base_allocations[index] += 1
+
+    return base_allocations
+
+
+def densify_lambda_schedule_points(
+    schedule_points: Sequence[Sequence[float]],
+    n_windows: int,
+) -> list[tuple[float, ...]]:
+    current_windows = len(schedule_points)
+    if n_windows < current_windows:
+        raise ValueError("Densification requires at least as many windows as the input schedule.")
+    if current_windows < 2:
+        raise ValueError("Cannot densify a lambda schedule with fewer than two points.")
+    if n_windows == current_windows:
+        return [tuple(point) for point in schedule_points]
+
+    segment_lengths = [
+        lambda_schedule_segment_length(start_point, end_point)
+        for start_point, end_point in zip(schedule_points, schedule_points[1:])
+    ]
+    extra_per_segment = allocate_extra_windows(
+        segment_lengths,
+        n_windows - current_windows,
+    )
+
+    densified = [tuple(schedule_points[0])]
+    for start_point, end_point, extra_points in zip(
+        schedule_points,
+        schedule_points[1:],
+        extra_per_segment,
+    ):
+        n_subsegments = extra_points + 1
+        for step in range(1, n_subsegments + 1):
+            densified.append(
+                interpolate_lambda_schedule_point(
+                    start_point,
+                    end_point,
+                    step / n_subsegments,
+                )
+            )
+
+    return densified
+
+
+def resample_lambda_schedule_points_by_path(
+    schedule_points: Sequence[Sequence[float]],
+    n_windows: int,
+) -> list[tuple[float, ...]]:
+    if n_windows < 2:
+        raise ValueError("SepTop lambda schedules require at least two windows.")
+
+    original_points = [tuple(float(value) for value in point) for point in schedule_points]
+    if len(original_points) < 2:
+        raise ValueError(
+            "Cannot resample a lambda schedule with fewer than two original points."
+        )
+    if len(original_points) == n_windows:
+        return original_points
+
+    cumulative_lengths = [0.0]
+    for start_point, end_point in zip(original_points, original_points[1:]):
+        cumulative_lengths.append(
+            cumulative_lengths[-1] + lambda_schedule_segment_length(start_point, end_point)
+        )
+
+    total_length = cumulative_lengths[-1]
+    if total_length == 0.0:
+        return [original_points[0]] * n_windows
+
+    resampled: list[tuple[float, ...]] = []
+    segment_index = 0
+    target_step = total_length / (n_windows - 1)
+    for output_index in range(n_windows):
+        target_length = output_index * target_step
+        while (
+            segment_index < len(original_points) - 2
+            and cumulative_lengths[segment_index + 1] < target_length
+        ):
+            segment_index += 1
+
+        start_length = cumulative_lengths[segment_index]
+        end_length = cumulative_lengths[segment_index + 1]
+        if end_length == start_length:
+            resampled.append(original_points[segment_index + 1])
+            continue
+
+        fraction = (target_length - start_length) / (end_length - start_length)
+        resampled.append(
+            interpolate_lambda_schedule_point(
+                original_points[segment_index],
+                original_points[segment_index + 1],
+                fraction,
+            )
+        )
+
+    resampled[0] = original_points[0]
+    resampled[-1] = original_points[-1]
+    return resampled
+
+
+def resize_lambda_settings(
+    lambda_settings: Any,
+    settings_name: str,
+    n_windows: int,
+    *,
+    smart_lambda: bool = False,
+) -> None:
     current_windows = get_lambda_schedule_length(lambda_settings, settings_name)
     if current_windows == n_windows:
         LOGGER.info(
@@ -610,16 +830,28 @@ def resize_lambda_settings(lambda_settings: Any, settings_name: str, n_windows: 
         )
         return
 
-    for field_name in LAMBDA_SETTING_FIELDS:
-        values = getattr(lambda_settings, field_name)
-        setattr(
-            lambda_settings,
-            field_name,
-            resample_lambda_schedule(values, n_windows),
-        )
+    if smart_lambda:
+        schedule_points = get_lambda_schedule_points(lambda_settings)
+        if n_windows > current_windows:
+            resized_points = densify_lambda_schedule_points(schedule_points, n_windows)
+        else:
+            resized_points = resample_lambda_schedule_points_by_path(
+                schedule_points,
+                n_windows,
+            )
+        set_lambda_schedule_points(lambda_settings, resized_points)
+    else:
+        for field_name in LAMBDA_SETTING_FIELDS:
+            values = getattr(lambda_settings, field_name)
+            setattr(
+                lambda_settings,
+                field_name,
+                resample_lambda_schedule(values, n_windows),
+            )
 
     LOGGER.info(
-        "Resampled %s lambda schedule from %d to %d windows",
+        "%s-resampled %s lambda schedule from %d to %d windows",
+        "Smart" if smart_lambda else "Index",
         settings_name,
         current_windows,
         n_windows,
@@ -628,35 +860,42 @@ def resize_lambda_settings(lambda_settings: Any, settings_name: str, n_windows: 
 
 def build_protocol(
     *,
-    partial_charge_method: str,
-    n_windows: int | None,
-    window_length_ns: float | None,
+    partial_charge_method: PartialChargeMethod,
+    solvent_n_windows: int | None,
+    complex_n_windows: int | None,
+    solvent_window_length_ns: float | None,
+    complex_window_length_ns: float | None,
+    smart_lambda: bool,
     equilibration_length_ns: float | None,
     protocol_repeats: int,
-    host_min_distance_nm: float,
-    host_max_distance_nm: float,
-    small_molecule_forcefield: str,
+    host_min_distance_nm: float | None,
+    host_max_distance_nm: float | None,
+    small_molecule_forcefield: str | None,
 ) -> Any:
     from openfe.protocols.openmm_septop import SepTopProtocol
     from openff.units import unit
 
     settings: Any = SepTopProtocol.default_settings()
     settings.partial_charge_settings.partial_charge_method = partial_charge_method
-    settings.forcefield_settings.small_molecule_forcefield = small_molecule_forcefield
+    if small_molecule_forcefield is not None:
+        settings.forcefield_settings.small_molecule_forcefield = small_molecule_forcefield
     settings.protocol_repeats = protocol_repeats
-    settings.complex_restraint_settings.host_min_distance = (
-        host_min_distance_nm * unit.nanometer
-    )
-    settings.complex_restraint_settings.host_max_distance = (
-        host_max_distance_nm * unit.nanometer
-    )
-
-    if window_length_ns is not None:
-        settings.solvent_simulation_settings.production_length = (
-            window_length_ns * unit.nanosecond
+    if host_min_distance_nm is not None:
+        settings.complex_restraint_settings.host_min_distance = (
+            host_min_distance_nm * unit.nanometer
         )
+    if host_max_distance_nm is not None:
+        settings.complex_restraint_settings.host_max_distance = (
+            host_max_distance_nm * unit.nanometer
+        )
+
+    if solvent_window_length_ns is not None:
+        settings.solvent_simulation_settings.production_length = (
+            solvent_window_length_ns * unit.nanosecond
+        )
+    if complex_window_length_ns is not None:
         settings.complex_simulation_settings.production_length = (
-            window_length_ns * unit.nanosecond
+            complex_window_length_ns * unit.nanosecond
         )
 
     if equilibration_length_ns is not None:
@@ -677,17 +916,28 @@ def build_protocol(
     )
     solvent_active_windows = solvent_default_windows
     complex_active_windows = complex_default_windows
-    if n_windows is None:
+    if solvent_n_windows is None and complex_n_windows is None:
         LOGGER.info(
             "Using SepTop default lambda schedules: solvent=%d windows, complex=%d windows",
             solvent_active_windows,
             complex_active_windows,
         )
-    else:
-        resize_lambda_settings(settings.solvent_lambda_settings, "solvent", n_windows)
-        resize_lambda_settings(settings.complex_lambda_settings, "complex", n_windows)
-        solvent_active_windows = n_windows
-        complex_active_windows = n_windows
+    if solvent_n_windows is not None:
+        resize_lambda_settings(
+            settings.solvent_lambda_settings,
+            "solvent",
+            solvent_n_windows,
+            smart_lambda=smart_lambda,
+        )
+        solvent_active_windows = solvent_n_windows
+    if complex_n_windows is not None:
+        resize_lambda_settings(
+            settings.complex_lambda_settings,
+            "complex",
+            complex_n_windows,
+            smart_lambda=smart_lambda,
+        )
+        complex_active_windows = complex_n_windows
 
     settings.solvent_simulation_settings.n_replicas = solvent_active_windows
     settings.complex_simulation_settings.n_replicas = complex_active_windows
@@ -695,13 +945,13 @@ def build_protocol(
     if solvent_active_windows == complex_active_windows:
         LOGGER.info(
             "Configured SepTop protocol with repeats=%d and %d lambda windows per leg",
-            protocol_repeats,
+            settings.protocol_repeats,
             solvent_active_windows,
         )
     else:
         LOGGER.info(
             "Configured SepTop protocol with repeats=%d, solvent windows=%d, and complex windows=%d",
-            protocol_repeats,
+            settings.protocol_repeats,
             solvent_active_windows,
             complex_active_windows,
         )
@@ -718,7 +968,7 @@ def create_alchemical_network(
 
     LOGGER.info("Loading receptor from %s", receptor_path)
     solvent = openfe.SolventComponent()
-    protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
+    protein = openfe.ProteinComponent.from_pdb_file(receptor_path)
 
     LOGGER.info("Creating SepTop alchemical network")
     transformations: list[Any] = []
@@ -795,8 +1045,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         protocol = build_protocol(
             partial_charge_method=config.partial_charge_method,
-            n_windows=config.n_windows,
-            window_length_ns=config.window_length_ns,
+            solvent_n_windows=config.solvent_n_windows,
+            complex_n_windows=config.complex_n_windows,
+            solvent_window_length_ns=config.solvent_window_length_ns,
+            complex_window_length_ns=config.complex_window_length_ns,
+            smart_lambda=config.smart_lambda,
             equilibration_length_ns=config.equilibration_length_ns,
             protocol_repeats=config.protocol_repeats,
             host_min_distance_nm=config.host_min_distance_nm,
