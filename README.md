@@ -53,15 +53,11 @@ without `python3`.
 
 Prepares a standard RBFE hybrid-topology setup from a receptor PDB and SDF with ligands.
 
-#### Usage Example
+#### Minimal Example
 ```bash
 prep-rbfe-hybridtop.py \
   --rec protein.pdb \
   --ligs ligands.sdf \
-  --partial-charge-method am1bcc \
-  --mapper kartograf \
-  --network minimal_spanning \
-  --small-molecule-forcefield openff-2.2.1 \
   --windows 11 \
   --windowtime 5.0
 ```
@@ -83,13 +79,16 @@ prep-rbfe-hybridtop.py \
 
 Prepares a SepTop RBFE network.
 
-#### Usage Example
+#### Minimal Example
 ```bash
 prep-rbfe-septop.py \
   --rec protein.pdb \
   --ligs ligands.sdf \
-  --partial-charge-method am1bcc \
-  --network minimal_spanning
+  --solvent-windows 27 \
+  --complex-windows 19 \
+  --solvent-windowtime 10.0 \
+  --complex-windowtime 10.0 \
+  --smart-lambda
 ```
 
 #### Arguments and Defaults
