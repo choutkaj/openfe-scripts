@@ -131,7 +131,9 @@ settings_large.protocol_repeats = 1
 
 # Defining solvent and protein components
 solvent = openfe.SolventComponent()
-protein = openfe.ProteinComponent.from_pdb_file(str(receptor_path))
+# GUFE's runtime PDB loader accepts text streams, but not Path objects.
+with receptor_path.open() as pdb_file:
+    protein = openfe.ProteinComponent.from_pdb_file(pdb_file)
 
 
 # Creating the alchemical network

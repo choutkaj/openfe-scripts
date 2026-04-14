@@ -501,7 +501,9 @@ def create_alchemical_network(
 
     LOGGER.info("Loading receptor from %s", receptor_path)
     solvent = openfe.SolventComponent()
-    protein = openfe.ProteinComponent.from_pdb_file(receptor_path)
+    # GUFE's runtime PDB loader accepts text streams, but not Path objects.
+    with receptor_path.open() as pdb_file:
+        protein = openfe.ProteinComponent.from_pdb_file(pdb_file)
 
     solvent_protocol = build_protocol(
         partial_charge_method=partial_charge_method,
