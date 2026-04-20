@@ -148,6 +148,12 @@ official OpenFE SepTop analysis tutorial and writes:
 - `dg.tsv`: MLE-derived absolute binding free energies.
 - `ddg_raw.tsv`: Per-leg raw SepTop free energies.
 
+Failed result JSON files without an `estimate` are skipped with a warning
+instead of aborting the entire analysis. If the computed network is
+disconnected, `ddg.tsv` and `ddg_raw.tsv` are still written, while `dg.tsv`
+will be emitted as an empty table because MLE-derived absolute `dG` values are
+not defined for a disconnected graph.
+
 If your OpenFE outputs are organized as `results/repeat1`, `results/repeat2`, ...
 you can point the script at the parent `results/` directory and it will analyze
 all repeat subfolders automatically.

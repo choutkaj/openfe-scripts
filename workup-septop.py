@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -113,9 +114,12 @@ def _load_valid_result_json(
     except (ValueError, IndexError):
         print(f"{fpath}: Missing ligand names. Skipping.")
         return None, None
-    if result["estimate"] is None:
-        errormsg = f"{fpath}: No 'estimate' found, assuming to be a failed simulation."
-        raise ValueError(errormsg)
+    if result.get("estimate") is None:
+        print(
+            f"{fpath}: No 'estimate' found, assuming to be a failed simulation. Skipping.",
+            file=sys.stderr,
+        )
+        return None, None
     return names, result
 
 
@@ -248,6 +252,17 @@ def generate_dg_mle(results_dict: dict[tuple[str, str], dict[str, list]]) -> "pd
     return df
 
 
+def _empty_dg_dataframe() -> "pd.DataFrame":
+    """Return an empty DG dataframe with the expected output columns."""
+    return pd.DataFrame(
+        columns=[
+            "ligand",
+            "DG (kcal/mol)",
+            "uncertainty (kcal/mol)",
+        ]
+    )
+
+
 def generate_dg_raw(results_dict: dict[tuple[str, str], dict[str, list]]) -> "pd.DataFrame":
     """Get the raw DG values for every leg in the SepTop transformation cycles."""
     data = []
@@ -287,9 +302,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     input_dirs = _expand_results_directories([Path(path) for path in args.results_dirs])
     results_dict = extract_results_dict(input_dirs)
 
+    if not results_dict:
+        print("No valid SepTop results found in the provided directories.", file=sys.stderr)
+        return 1
+
     df_ddg = generate_ddg(results_dict)
-    df_dg = generate_dg_mle(results_dict)
     df_raw = generate_dg_raw(results_dict)
+    try:
+        df_dg = generate_dg_mle(results_dict)
+    except ValueError as exc:
+        if "not fully connected" not in str(exc):
+            raise
+        print(
+            "Computational results are not fully connected; skipping MLE absolute DG output.",
+            file=sys.stderr,
+        )
+        df_dg = _empty_dg_dataframe()
 
     ddg_path = output_dir / "ddg.tsv"
     dg_path = output_dir / "dg.tsv"
