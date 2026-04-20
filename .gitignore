@@ -1,6 +1,9 @@
 # Codex folder
 .codex
 
+# Build
+*.egg-info
+
 # Existing local/example output
 example/
 example_small/
