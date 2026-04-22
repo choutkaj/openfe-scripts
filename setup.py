@@ -13,6 +13,7 @@ setup(
     long_description=README_PATH.read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     python_requires=">=3.10",
+    py_modules=["plot_network"],
     scripts=[
         "prep-rbfe-hybridtop.py",
         "prep-rbfe-septop.py",
