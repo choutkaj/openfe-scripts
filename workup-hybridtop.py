@@ -570,12 +570,22 @@ def parse_leg_result(result_path: Path, results_root: Path) -> dict[str, Any]:
     repex_matrix = decode_ndarray(repex_stats["matrix"])
     repex_eigenvalues = decode_ndarray(repex_stats["eigenvalues"])
 
-    convergence = analysis_result["outputs"]["forward_and_reverse_energies"]
-    fractions = decode_ndarray(convergence["fractions"])
-    forward_dgs = decode_ndarray(convergence["forward_DGs"]["magnitude"])
-    reverse_dgs = decode_ndarray(convergence["reverse_DGs"]["magnitude"])
-    hysteresis_profile = np.abs(forward_dgs - reverse_dgs)
-    hysteresis_metrics = extract_hysteresis_metrics(fractions, hysteresis_profile)
+    convergence = analysis_result["outputs"].get("forward_and_reverse_energies")
+    if convergence is None:
+        print(
+            f"Warning: missing forward/reverse convergence data in {result_path}; "
+            "hysteresis metrics will be reported as NA.",
+            file=sys.stderr,
+        )
+        fractions = np.asarray([], dtype=float)
+        hysteresis_profile = np.asarray([], dtype=float)
+        hysteresis_metrics = missing_hysteresis_metrics()
+    else:
+        fractions = decode_ndarray(convergence["fractions"])
+        forward_dgs = decode_ndarray(convergence["forward_DGs"]["magnitude"])
+        reverse_dgs = decode_ndarray(convergence["reverse_DGs"]["magnitude"])
+        hysteresis_profile = np.abs(forward_dgs - reverse_dgs)
+        hysteresis_metrics = extract_hysteresis_metrics(fractions, hysteresis_profile)
 
     simulation_time_per_window_ns = quantity_to_ns(simulation_settings["production_length"])
     equilibration_time_per_window_ns = quantity_to_ns(
@@ -1196,6 +1206,17 @@ def extract_hysteresis_metrics(
         metrics[f"hysteresis_{percent}pct_fraction_actual"] = float(fractions[index])
 
     metrics["final_hysteresis_kcal_mol"] = float(hysteresis_profile[-1])
+    return metrics
+
+
+def missing_hysteresis_metrics() -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    for target in TARGET_HYSTERESIS_FRACTIONS:
+        percent = int(round(target * 100))
+        metrics[f"hysteresis_{percent}pct_kcal_mol"] = np.nan
+        metrics[f"hysteresis_{percent}pct_fraction_actual"] = np.nan
+
+    metrics["final_hysteresis_kcal_mol"] = np.nan
     return metrics
 
 
